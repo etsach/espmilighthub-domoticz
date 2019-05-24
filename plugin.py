@@ -480,7 +480,7 @@ class BasePlugin:
             switchTypeDomoticz = 7 # Dimmer
             Type = 0xf1    # pTypeColorSwitch
             Subtype = 0x04 # sTypeColor_RGB_CW_WW
-        elif device_type == 'cct' or devicetype == 'fut091':
+        elif device_type == 'cct' or device_type == 'fut091':
             Domoticz.Debug("devicetype == CCT")
             switchTypeDomoticz = 7 # Dimmer
             Type = 0xf1    # pTypeColorSwitch
