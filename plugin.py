@@ -1,7 +1,7 @@
 #           MQTT discovery plugin
 #
 """
-<plugin key="MilightESP8266" name="ESP8266 Milight Hub" version="0.0.8">
+<plugin key="MilightESP8266" name="ESP8266 Milight Hub" version="0.0.9">
     <description>
       ESP8266 Milight Hub plugin using MQTT<br/><br/>
       Specify MQTT server and port.<br/>
@@ -15,9 +15,8 @@
         <param field="Password" label="Password" width="300px"/>
         <!-- <param field="Mode1" label="CA Filename" width="300px"/> -->
         <param field="Mode2" label="mqtt_topic_pattern" width="300px" default="milight/:device_id/:device_type/:group_id"/>
-        <param field="Mode3" label="mqtt_state_topic_pattern" width="300px" default="milight/states/:device_id/:device_type/:group_id"/>
-        <param field="Mode4" label="Ignored device topics (comma separated)" width="300px" default=""/>
-
+        <param field="Mode3" label="mqtt_states_topic_pattern" width="300px" default="milight/states/:device_id/:device_type/:group_id"/>
+        <param field="Mode4" label="mqtt_updates_topic_pattern" width="300px" default="milight/updates/:device_id/:device_type/:group_id"/>
         <param field="Mode5" label="Options" width="300px"/>
         <param field="Mode6" label="Debug" width="75px">
             <options>
@@ -193,11 +192,8 @@ class BasePlugin:
         self.mqttserverport = Parameters["Port"].replace(" ", "")
         self.commands_topic_format = Parameters["Mode2"]
         self.states_topic_format = Parameters["Mode3"]
+        self.updates_topic_format = Parameters["Mode4"]
         
-        self.ignoredtopics = []
-        for ignoredtopic in Parameters["Mode4"].split(','):
-            if len(ignoredtopic)>0:
-                self.ignoredtopics.append(ignoredtopic)
 
         options = ""
         try:
@@ -243,18 +239,17 @@ class BasePlugin:
         if self.debugging == "Verbose" or self.debugging == "Verbose+":
             DumpMQTTMessageToLog(topic, rawmessage, 'onMQTTPublish: ')
 
-        if topic in self.ignoredtopics:
-            Domoticz.Debug("Topic: '"+topic+"' included in ignored topics, message ignored")
-            return
-
         states_topic_format_list = self.states_topic_format.split('/')
+        updates_topic_format_list = self.updates_topic_format.split('/')
         topiclist = topic.split('/')
         
-        device_id = None
-        device_type = None
-        group_id = None
-        format_ok = True
+        
+        #Check states topic
         if len(states_topic_format_list) == len(topiclist):
+            device_id = None
+            device_type = None
+            group_id = None
+            format_ok = True
             for i in range(len(topiclist)):
                 item = states_topic_format_list[i]
                 if item==':device_id' or item==':hex_device_id':
@@ -265,16 +260,40 @@ class BasePlugin:
                     group_id = topiclist[i]
                 elif item!=topiclist[i]:
                     format_ok = False
-
-
-        if format_ok and device_id and device_type and group_id:
-            Domoticz.Debug("Topic: "+topic+" message : "+json.dumps(message))
-            if topic not in self.registeredDevices:
-                unit = self.setLightDevice(device_id, device_type, group_id, message)
-                if unit>=0:
-                    self.registeredDevices[topic] = unit
-            self.updateLightDevice(device_id, device_type, group_id, message)
-
+                    
+            if format_ok and device_id and device_type and group_id:
+                Domoticz.Debug("Topic: "+topic+" message : "+json.dumps(message))
+                if topic not in self.registeredDevices:
+                    unit = self.setLightDevice(device_id, device_type, group_id, message)
+                    if unit>=0:
+                        self.registeredDevices[topic] = unit
+                self.updateLightDevice(device_id, device_type, group_id, message)
+            
+        #Check updates topic
+        if len(updates_topic_format_list) == len(topiclist):
+            device_id = None
+            device_type = None
+            group_id = None
+            format_ok = True
+            for i in range(len(topiclist)):
+                item = updates_topic_format_list[i]
+                if item==':device_id' or item==':hex_device_id':
+                    device_id = topiclist[i]
+                elif item==':device_type':
+                    device_type = topiclist[i]
+                elif item==':group_id':
+                    group_id = topiclist[i]
+                elif item!=topiclist[i]:
+                    format_ok = False
+                    
+            if format_ok and device_id and device_type and group_id=='0':
+                for i in range(1,8):
+                    single_group_id = str(i)
+                    single_topic = self.states_topic_format.replace(":device_id", device_id).replace(":hex_device_id", device_id).replace(":device_type", device_type).replace(":group_id", single_group_id)
+                    Domoticz.Debug("Topic: "+single_topic)
+                    if single_topic in self.registeredDevices:
+                        Domoticz.Debug("Topic YES: "+single_topic)
+                        self.updateLightDevice(device_id, device_type, single_group_id, message)
 
     def onMQTTSubscribed(self):
         # (Re)subscribed, refresh device info
@@ -423,6 +442,8 @@ class BasePlugin:
         
         topic = self.states_topic_format.replace(":device_id", "+") .replace(":hex_device_id", "+") .replace(":device_type", "+").replace(":group_id", "+") 
         topics.add(topic)
+        topic = self.updates_topic_format.replace(":device_id", "+") .replace(":hex_device_id", "+") .replace(":device_type", "+").replace(":group_id", "+") 
+        topics.add(topic)
         
         Domoticz.Debug("getTopics: '" + str(topics) +"'")
         return list(topics)
@@ -452,13 +473,7 @@ class BasePlugin:
         Domoticz.Log("Creating device with unit: " + str(iUnit));
         Domoticz.Device(Name=Name, Unit=iUnit, Type=Type, Subtype=Subtype, Switchtype=switchTypeDomoticz, Options=Options, Used=self.options['addDiscoveredDeviceUsed']).Create()
 
-    def isDeviceIgnored(self, topic):
-        ignore = False
-        for ignoredtopic in self.ignoredtopics:
-            if topic.startswith(ignoredtopic):
-                ignore = True
-                Domoticz.Debug("isDeviceIgnored: " + subtopic +" "+ str(ignore))
-        return ignore
+
 
 
 
@@ -613,30 +628,30 @@ class BasePlugin:
                         Color['m'] = 2
                     else:
                         Color['m'] = 1
-                elif message['bulb_mode']=='rgb' or message['bulb_mode']=='color':
+                elif (message['bulb_mode']=='rgb' or message['bulb_mode']=='color') and hasRGB:
                     Color['m'] = 3
                 elif message['bulb_mode']=='scene' and 'mode' in message:
                     nValue = 24+message['mode']
                     sValue = "Disco Mode "+str(message['mode']+1)
 
-            if 'color_temp' in message:
+            if 'color_temp' in message and hasCCT:
                 Color['t'] = int(int(message['color_temp'])-153)*255/(370-153)
                    
-            if 'hue' in message:
+            if 'hue' in message and hasRGB:
                 hue = message['hue']
                 (r,g,b) = self.hs_to_rgb(hue,sat)
                 Color['r'] = r
                 Color['g'] = g
                 Color['b'] = b
 
-            if 'saturation' in message:
+            if 'saturation' in message and hasRGB:
                 sat = message['saturation']
                 (r,g,b) = self.hs_to_rgb(hue, sat)
                 Color['r'] = r
                 Color['g'] = g
                 Color['b'] = b
 
-            if 'color' in message:
+            if 'color' in message and hasRGB:
                 col = message['color']
                 if 'r' in col:
                     Color['r'] = col['r']
