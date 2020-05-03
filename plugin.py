@@ -343,6 +343,8 @@ class BasePlugin:
                         Domoticz.Error("onCommand: Illegal color: '" + str(sColor) + "'")
                         
                     payload['level'] = int(Level)
+                    if(Level>0):
+                        payload['status'] = 'ON'
                         
                     if color['m']==1:
                         payload['command'] = 'set_white'
