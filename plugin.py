@@ -349,7 +349,6 @@ class BasePlugin:
                     if color['m']==1:
                         payload['command'] = 'set_white'
                     elif color['m']==2 and 't' in color:
-                        payload['command'] = 'set_white'
                         payload['temperature'] = int(color['t']*100/255)
                     elif color['m']==3 and 'r' in color and 'g' in color and 'b' in color:
                         payload['color'] = { 'r': color['r'], 'g': color['g'], 'b': color['b'] }
